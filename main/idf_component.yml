@@ -1,0 +1,4 @@
+dependencies:
+  espressif/esp32_s3_eye: "^3.0.4"
+  espressif/esp-tflite-micro:
+    version: '*'
