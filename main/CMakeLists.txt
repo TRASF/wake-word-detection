@@ -10,7 +10,6 @@ idf_component_register(
          micro_features_generator.cc ringbuf.c
          font/lv_font_montserrat_22.c
     PRIV_REQUIRES spi_flash driver esp_timer
-    REQUIRES espressif__esp32_s3_eye lvgl
     INCLUDE_DIRS ".")
 
 # Reduce the level of paranoia to be able to compile sources
