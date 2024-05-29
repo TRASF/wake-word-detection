@@ -9,7 +9,7 @@ idf_component_register(
          model.cc recognize_commands.cc command_responder.cc
          micro_features_generator.cc ringbuf.c
          font/lv_font_montserrat_22.c
-    PRIV_REQUIRES spi_flash driver esp_timer test_data
+    PRIV_REQUIRES spi_flash driver esp_timer
     REQUIRES espressif__esp32_s3_eye lvgl
     INCLUDE_DIRS ".")
 
