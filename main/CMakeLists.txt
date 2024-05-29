@@ -8,7 +8,6 @@ idf_component_register(
          no_micro_features_data.cc yes_micro_features_data.cc
          model.cc recognize_commands.cc command_responder.cc
          micro_features_generator.cc ringbuf.c
-         font/lv_font_montserrat_22.c
     PRIV_REQUIRES spi_flash driver esp_timer
     INCLUDE_DIRS ".")
 
