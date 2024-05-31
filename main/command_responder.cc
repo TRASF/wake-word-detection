@@ -25,27 +25,30 @@ extern "C" void setup_display();
 
 // END TODO 1 ----------------------------------------------------------------
 
-void setup_styles() {
+void setup_styles()
+{
     // TODO 2 : Initialize styles --------------------------------------------
 
     // END TODO 2 ------------------------------------------------------------
 }
 
-void RespondToCommand(int32_t current_time, const char* found_command,
-                      float score, bool is_new_command) {
-    if (is_new_command) {
+void RespondToCommand(int32_t current_time, const char *found_command,
+                      float score, bool is_new_command)
+{
+    if (is_new_command)
+    {
         MicroPrintf("Heard %s (%.4f) @%dms", found_command, score, current_time);
 
         // Display the recognized command on the LCD
         static lv_obj_t *label = nullptr;
         static lv_obj_t *screen = nullptr;
-        if (label == nullptr) {
+        if (label == nullptr)
+        {
             screen = lv_scr_act();
             label = lv_label_create(screen);
 
             // Set label size to avoid overflow
             lv_obj_set_width(label, LV_HOR_RES - 20);
-            lv_obj_set_height(label, LV_VER_RES / 4); // Set a sufficient height for the label
 
             // Enable word wrap and auto resize
             lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
@@ -56,12 +59,14 @@ void RespondToCommand(int32_t current_time, const char* found_command,
             lv_style_init(&style);
 
             // TODO 3: Set font size --------------------------------------------
-
+            lv_style_set_text_font(&style, &lv_font_montserrat_22);
             // END TODO 3 -------------------------------------------------------
 
             lv_style_set_text_align(&style, LV_TEXT_ALIGN_CENTER);
             lv_obj_add_style(label, &style, 0);
-        } else {
+        }
+        else
+        {
             lv_label_set_text(label, ""); // Clear previous text
         }
 
@@ -70,7 +75,8 @@ void RespondToCommand(int32_t current_time, const char* found_command,
         snprintf(score_str, sizeof(score_str), "%.2f", score);
 
         // TODO 4 : Create the final string to display -------------------------
-
+        char display_str[128];
+        snprintf(display_str, sizeof(display_str), "Detected something");
         // END TODO 4 ----------------------------------------------------------
 
         // Set the text of the label

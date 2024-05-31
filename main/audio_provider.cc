@@ -31,6 +31,7 @@ limitations under the License.
 #include "freertos/task.h"
 #include "ringbuf.h"
 #include "micro_model_settings.h"
+#include "bsp/esp32_s3_eye.h"
 
 using namespace std;
 
@@ -81,10 +82,10 @@ static void i2s_init(void) {
       .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
       .slot_cfg = I2S_STD_PCM_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
       .gpio_cfg = {
-        .bclk = GPIO_NUM_41,
-        .ws = GPIO_NUM_42,
+        .bclk = BSP_I2S_SCLK,
+        .ws = BSP_I2S_LCLK,
         .dout = I2S_GPIO_UNUSED,
-        .din = GPIO_NUM_2,
+        .din = BSP_I2S_DIN,
       },
       
     };
