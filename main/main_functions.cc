@@ -32,9 +32,6 @@ limitations under the License.
 
 // Include BSP headers
 #include "bsp/esp32_s3_eye.h"
-#include "lvgl.h"
-
-#include "esp_lvgl_port.h"
 
 // Globals, used for compatibility with Arduino-style sketches.
 namespace
@@ -69,7 +66,7 @@ void setup()
   }
 
   // Pull in only the operation implementations we need.
-  static tflite::MicroMutableOpResolver<4> micro_op_resolver;
+  static tflite::MicroMutableOpResolver<6> micro_op_resolver;
   if (micro_op_resolver.AddDepthwiseConv2D() != kTfLiteOk)
   {
     return;
@@ -86,6 +83,15 @@ void setup()
   {
     return;
   }
+  if (micro_op_resolver.AddConv2D() != kTfLiteOk)
+  {
+    return;
+  }
+  if (micro_op_resolver.AddQuantize() != kTfLiteOk)
+  {
+    return;
+  }
+
 
   // Build an interpreter to run the model with.
   static tflite::MicroInterpreter static_interpreter(
@@ -110,7 +116,7 @@ void setup()
     return;
   }
   model_input_buffer = tflite::GetTensorData<int8_t>(model_input);
-
+  
   // Prepare to access the audio spectrograms from a microphone or other source
   static FeatureProvider static_feature_provider(kFeatureElementCount,
                                                  feature_buffer);
@@ -122,10 +128,8 @@ void setup()
   previous_time = 0;
 
   // Initialize LVGL library and display
-  lv_init();
   bsp_display_start();
   bsp_display_backlight_on();
-
   setup_styles();
 }
 
