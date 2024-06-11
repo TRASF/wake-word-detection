@@ -16,8 +16,7 @@ limitations under the License.
 #include "command_responder.h"
 #include "tensorflow/lite/micro/micro_log.h"
 #include "lvgl.h"
-#include "esp_lvgl_port.h"
-
+#include <cstdio>
 // Ensure you have the display initialized somewhere in your setup
 extern "C" void setup_display();
 
@@ -52,14 +51,13 @@ void RespondToCommand(int32_t current_time, const char *found_command,
 
             // Enable word wrap and auto resize
             lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-            lv_label_set_recolor(label, true);
 
             // Set text style to increase size
             static lv_style_t style;
             lv_style_init(&style);
 
             // TODO 3: Set font size --------------------------------------------
-            lv_style_set_text_font(&style, &lv_font_montserrat_22);
+            lv_style_set_text_font(&style, &lv_font_montserrat_14);
             // END TODO 3 -------------------------------------------------------
 
             lv_style_set_text_align(&style, LV_TEXT_ALIGN_CENTER);
