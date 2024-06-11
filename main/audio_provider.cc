@@ -55,7 +55,7 @@ constexpr int32_t history_samples_to_keep =
 constexpr int32_t new_samples_to_get =
     (kFeatureStrideMs * (kAudioSampleFrequency / 1000));
 
-const int32_t kAudioCaptureBufferSize = 40000;
+const int32_t kAudioCaptureBufferSize = 16000;
 const int32_t i2s_bytes_to_read = 3200;
 
 namespace {

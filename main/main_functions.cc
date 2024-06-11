@@ -46,7 +46,7 @@ namespace
   // Create an area of memory to use for input, output, and intermediate arrays.
   // The size of this will depend on the model you're using, and may need to be
   // determined by experimentation.
-  constexpr int kTensorArenaSize = 30 * 1024;
+  constexpr int kTensorArenaSize = 12 * 1024;
   uint8_t tensor_arena[kTensorArenaSize];
   int8_t feature_buffer[kFeatureElementCount];
   int8_t *model_input_buffer = nullptr;
