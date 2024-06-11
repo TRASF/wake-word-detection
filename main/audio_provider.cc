@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+
 #include "audio_provider.h"
 
 #include <cstdlib>
@@ -23,7 +24,7 @@ limitations under the License.
 #include "freertos/FreeRTOS.h"
 // clang-format on
 
-#include "driver/i2s_std.h"
+#include "driver/i2s.h"
 #include "esp_log.h"
 #include "esp_spi_flash.h"
 #include "esp_system.h"
@@ -31,7 +32,6 @@ limitations under the License.
 #include "freertos/task.h"
 #include "ringbuf.h"
 #include "micro_model_settings.h"
-#include "bsp/esp32_s3_eye.h"
 
 using namespace std;
 
@@ -65,7 +65,11 @@ int16_t g_history_buffer[history_samples_to_keep];
 
 #if !NO_I2S_SUPPORT
 uint8_t g_i2s_read_buffer[i2s_bytes_to_read] = {};
-i2s_chan_handle_t rx_handle;
+#if CONFIG_IDF_TARGET_ESP32
+i2s_port_t i2s_port = I2S_NUM_1; // for esp32-eye
+#else
+i2s_port_t i2s_port = I2S_NUM_0; // for esp32-s3-eye
+#endif
 #endif
 }  // namespace
 
@@ -74,24 +78,50 @@ i2s_chan_handle_t rx_handle;
 #else
 static void i2s_init(void) {
   // Start listening for audio: MONO @ 16KHz
-  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+  i2s_config_t i2s_config = {
+      .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+      .sample_rate = 16000,
+      .bits_per_sample = (i2s_bits_per_sample_t) 16,
+      .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+      .communication_format = I2S_COMM_FORMAT_I2S,
+      .intr_alloc_flags = 0,
+      .dma_buf_count = 3,
+      .dma_buf_len = 300,
+      .use_apll = false,
+      .tx_desc_auto_clear = false,
+      .fixed_mclk = -1,
+  };
+#if CONFIG_IDF_TARGET_ESP32S3
+  i2s_pin_config_t pin_config = {
+      .bck_io_num = 41,    // IIS_SCLK
+      .ws_io_num = 42,     // IIS_LCLK
+      .data_out_num = -1,  // IIS_DSIN
+      .data_in_num = 2,   // IIS_DOUT
+  };
+  i2s_config.bits_per_sample = (i2s_bits_per_sample_t) 32;
+#else
+  i2s_pin_config_t pin_config = {
+      .bck_io_num = 26,    // IIS_SCLK
+      .ws_io_num = 32,     // IIS_LCLK
+      .data_out_num = -1,  // IIS_DSIN
+      .data_in_num = 33,   // IIS_DOUT
+  };
+#endif
 
-  ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, NULL, &rx_handle));
+  esp_err_t ret = 0;
+  ret = i2s_driver_install(i2s_port, &i2s_config, 0, NULL);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Error in i2s_driver_install");
+  }
+  ret = i2s_set_pin(i2s_port, &pin_config);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Error in i2s_set_pin");
+  }
 
-    i2s_std_config_t std_cfg = {
-      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
-      .slot_cfg = I2S_STD_PCM_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-      .gpio_cfg = {
-        .bclk = BSP_I2S_SCLK,
-        .ws = BSP_I2S_LCLK,
-        .dout = I2S_GPIO_UNUSED,
-        .din = BSP_I2S_DIN,
-      },
-      
-    };
-
-  ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle, &std_cfg));
-  ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
+  ret = i2s_zero_dma_buffer(i2s_port);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Error in initializing dma buffer with 0");
+  }
 }
 #endif
 
@@ -103,8 +133,8 @@ static void CaptureSamples(void* arg) {
   i2s_init();
   while (1) {
     /* read 100ms data at once from i2s */
-    i2s_channel_read(rx_handle, (void*)g_i2s_read_buffer, i2s_bytes_to_read,
-                     &bytes_read, pdMS_TO_TICKS(300));
+    i2s_read(i2s_port, (void*)g_i2s_read_buffer, i2s_bytes_to_read,
+             &bytes_read, pdMS_TO_TICKS(100));
 
     if (bytes_read <= 0) {
       ESP_LOGE(TAG, "Error in I2S read : %d", bytes_read);
@@ -121,7 +151,7 @@ static void CaptureSamples(void* arg) {
 #endif
       /* write bytes read by i2s into ring buffer */
       int bytes_written = rb_write(g_audio_capture_buffer,
-                                   (uint8_t*)g_i2s_read_buffer, bytes_read, pdMS_TO_TICKS(300));
+                                   (uint8_t*)g_i2s_read_buffer, bytes_read, pdMS_TO_TICKS(100));
       if (bytes_written != bytes_read) {
         ESP_LOGI(TAG, "Could only write %d bytes out of %d", bytes_written, bytes_read);
       }
