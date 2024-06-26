@@ -17,6 +17,8 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_log.h"
 #include "lvgl.h"
 #include <cstdio>
+#include "bsp/esp32_s3_eye.h"
+
 // Ensure you have the display initialized somewhere in your setup
 extern "C" void setup_display();
 
