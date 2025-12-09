@@ -24,9 +24,9 @@ limitations under the License.
 #include "freertos/FreeRTOS.h"
 // clang-format on
 
-#include "driver/i2s.h"
+#include "driver/i2s_std.h"
 #include "esp_log.h"
-#include "esp_spi_flash.h"
+#include "spi_flash_mmap.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/task.h"
@@ -55,7 +55,7 @@ constexpr int32_t history_samples_to_keep =
 constexpr int32_t new_samples_to_get =
     (kFeatureStrideMs * (kAudioSampleFrequency / 1000));
 
-const int32_t kAudioCaptureBufferSize = 16000;
+const int32_t kAudioCaptureBufferSize = 32000;  // Increased from 16000 to 32000 (2 seconds)
 const int32_t i2s_bytes_to_read = 3200;
 
 namespace {
@@ -65,11 +65,7 @@ int16_t g_history_buffer[history_samples_to_keep];
 
 #if !NO_I2S_SUPPORT
 uint8_t g_i2s_read_buffer[i2s_bytes_to_read] = {};
-#if CONFIG_IDF_TARGET_ESP32
-i2s_port_t i2s_port = I2S_NUM_1; // for esp32-eye
-#else
-i2s_port_t i2s_port = I2S_NUM_0; // for esp32-s3-eye
-#endif
+i2s_chan_handle_t rx_chan = NULL; // I2S RX channel handle
 #endif
 }  // namespace
 
@@ -77,50 +73,69 @@ i2s_port_t i2s_port = I2S_NUM_0; // for esp32-s3-eye
   // nothing to be done here
 #else
 static void i2s_init(void) {
-  // Start listening for audio: MONO @ 16KHz
-  i2s_config_t i2s_config = {
-      .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-      .sample_rate = 16000,
-      .bits_per_sample = (i2s_bits_per_sample_t) 16,
-      .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-      .communication_format = I2S_COMM_FORMAT_I2S,
-      .intr_alloc_flags = 0,
-      .dma_buf_count = 3,
-      .dma_buf_len = 300,
-      .use_apll = false,
-      .tx_desc_auto_clear = false,
-      .fixed_mclk = -1,
-  };
+  // Start listening for audio: MONO @ 16KHz with new I2S standard driver
+  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+  chan_cfg.dma_desc_num = 6;
+  chan_cfg.dma_frame_num = 240;
+  chan_cfg.auto_clear = false;
+  
+  esp_err_t ret = i2s_new_channel(&chan_cfg, NULL, &rx_chan);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Error in i2s_new_channel: %s", esp_err_to_name(ret));
+    return;
+  }
+
 #if CONFIG_IDF_TARGET_ESP32S3
-  i2s_pin_config_t pin_config = {
-      .bck_io_num = 41,    // IIS_SCLK
-      .ws_io_num = 42,     // IIS_LCLK
-      .data_out_num = -1,  // IIS_DSIN
-      .data_in_num = 2,   // IIS_DOUT
+  // ESP32-S3-EYE configuration
+  i2s_std_config_t std_cfg = {
+      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+      .gpio_cfg = {
+          .mclk = I2S_GPIO_UNUSED,
+          .bclk = GPIO_NUM_41,
+          .ws   = GPIO_NUM_42,
+          .dout = I2S_GPIO_UNUSED,
+          .din  = GPIO_NUM_2,
+          .invert_flags = {
+              .mclk_inv = false,
+              .bclk_inv = false,
+              .ws_inv   = false,
+          },
+      },
   };
-  i2s_config.bits_per_sample = (i2s_bits_per_sample_t) 32;
+  // For ESP32-S3, we need to enable MSB shift for proper data alignment
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
 #else
-  i2s_pin_config_t pin_config = {
-      .bck_io_num = 26,    // IIS_SCLK
-      .ws_io_num = 32,     // IIS_LCLK
-      .data_out_num = -1,  // IIS_DSIN
-      .data_in_num = 33,   // IIS_DOUT
+  // ESP32-EYE configuration
+  i2s_std_config_t std_cfg = {
+      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(16000),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+      .gpio_cfg = {
+          .mclk = I2S_GPIO_UNUSED,
+          .bclk = GPIO_NUM_26,
+          .ws   = GPIO_NUM_32,
+          .dout = I2S_GPIO_UNUSED,
+          .din  = GPIO_NUM_33,
+          .invert_flags = {
+              .mclk_inv = false,
+              .bclk_inv = false,
+              .ws_inv   = false,
+          },
+      },
   };
 #endif
 
-  esp_err_t ret = 0;
-  ret = i2s_driver_install(i2s_port, &i2s_config, 0, NULL);
+  ret = i2s_channel_init_std_mode(rx_chan, &std_cfg);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Error in i2s_driver_install");
-  }
-  ret = i2s_set_pin(i2s_port, &pin_config);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Error in i2s_set_pin");
+    ESP_LOGE(TAG, "Error in i2s_channel_init_std_mode: %s", esp_err_to_name(ret));
+    return;
   }
 
-  ret = i2s_zero_dma_buffer(i2s_port);
+  ret = i2s_channel_enable(rx_chan);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Error in initializing dma buffer with 0");
+    ESP_LOGE(TAG, "Error in i2s_channel_enable: %s", esp_err_to_name(ret));
+  } else {
+    ESP_LOGI(TAG, "I2S driver initialized successfully");
   }
 }
 #endif
@@ -129,21 +144,26 @@ static void CaptureSamples(void* arg) {
 #if NO_I2S_SUPPORT
   ESP_LOGE(TAG, "i2s support not available on C3 chip for IDF < 4.4.0");
 #else
-  size_t bytes_read = i2s_bytes_to_read;
+  size_t bytes_read = 0;
   i2s_init();
+  
+  // Small delay to allow I2S to stabilize
+  vTaskDelay(pdMS_TO_TICKS(100));
+  
   while (1) {
-    /* read 100ms data at once from i2s */
-    i2s_read(i2s_port, (void*)g_i2s_read_buffer, i2s_bytes_to_read,
-             &bytes_read, pdMS_TO_TICKS(100));
+    /* read 100ms data at once from i2s - use longer timeout for complete reads */
+    esp_err_t ret = i2s_channel_read(rx_chan, (void*)g_i2s_read_buffer, i2s_bytes_to_read,
+                                      &bytes_read, pdMS_TO_TICKS(1000));
+    
+    if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT) {
+      ESP_LOGE(TAG, "Error in i2s_channel_read: %s", esp_err_to_name(ret));
+      vTaskDelay(pdMS_TO_TICKS(10));
+      continue;
+    }
 
-    if (bytes_read <= 0) {
-      ESP_LOGE(TAG, "Error in I2S read : %d", bytes_read);
-    } else {
-      if (bytes_read < i2s_bytes_to_read) {
-        ESP_LOGW(TAG, "Partial I2S read");
-      }
+    if (bytes_read > 0) {
 #if CONFIG_IDF_TARGET_ESP32S3
-      // rescale the data
+      // rescale the data from 32-bit to 16-bit
       for (int i = 0; i < bytes_read / 4; ++i) {
         ((int16_t *) g_i2s_read_buffer)[i] = ((int32_t *) g_i2s_read_buffer)[i] >> 14;
       }
@@ -151,18 +171,19 @@ static void CaptureSamples(void* arg) {
 #endif
       /* write bytes read by i2s into ring buffer */
       int bytes_written = rb_write(g_audio_capture_buffer,
-                                   (uint8_t*)g_i2s_read_buffer, bytes_read, pdMS_TO_TICKS(100));
+                                   (uint8_t*)g_i2s_read_buffer, bytes_read, 0);
       if (bytes_written != bytes_read) {
-        ESP_LOGI(TAG, "Could only write %d bytes out of %d", bytes_written, bytes_read);
+        // Don't block - if buffer is full, just drop the oldest data by continuing
+        if (bytes_written == 0) {
+          // Buffer full - this is expected during heavy processing
+          vTaskDelay(pdMS_TO_TICKS(5));  // Small delay to let consumer catch up
+        }
       }
       /* update the timestamp (in ms) to let the model know that new data has
-       * arrived */
-      g_latest_audio_timestamp = g_latest_audio_timestamp +
-          ((1000 * (bytes_written / 2)) / kAudioSampleFrequency);
-      if (bytes_written <= 0) {
-        ESP_LOGE(TAG, "Could Not Write in Ring Buffer: %d ", bytes_written);
-      } else if (bytes_written < bytes_read) {
-        ESP_LOGW(TAG, "Partial Write");
+       * arrived - only for successfully written bytes */
+      if (bytes_written > 0) {
+        g_latest_audio_timestamp = g_latest_audio_timestamp +
+            ((1000 * (bytes_written / 2)) / kAudioSampleFrequency);
       }
     }
   }
@@ -177,8 +198,8 @@ TfLiteStatus InitAudioRecording() {
     return kTfLiteError;
   }
   /* create CaptureSamples Task which will get the i2s_data from mic and fill it
-   * in the ring buffer */
-  xTaskCreate(CaptureSamples, "CaptureSamples", 1024 * 4, NULL, 10, NULL);
+   * in the ring buffer - increased stack and priority for better performance */
+  xTaskCreate(CaptureSamples, "CaptureSamples", 1024 * 6, NULL, 12, NULL);
   while (!g_latest_audio_timestamp) {
     vTaskDelay(1); // one tick delay to avoid watchdog
   }

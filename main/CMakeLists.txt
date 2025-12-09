@@ -7,7 +7,7 @@ idf_component_register(
     SRCS main.cc main_functions.cc audio_provider.cc feature_provider.cc
          model.cc recognize_commands.cc command_responder.cc
          micro_features_generator.cc ringbuf.c
-    PRIV_REQUIRES spi_flash driver esp_timer
+    PRIV_REQUIRES spi_flash driver esp_timer esp_driver_i2s
     INCLUDE_DIRS ".")
 
 # Reduce the level of paranoia to be able to compile sources

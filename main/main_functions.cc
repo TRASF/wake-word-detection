@@ -29,6 +29,8 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_log.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // Include BSP headers
 #include "bsp/esp32_s3_eye.h"
@@ -146,8 +148,11 @@ void loop()
     return;
   }
   previous_time = current_time;
+  MicroPrintf("how_many_new_slices: %d", how_many_new_slices);
   if (how_many_new_slices == 0)
   {
+    // No new data - yield to other tasks to prevent starvation
+    vTaskDelay(1);
     return;
   }
 
@@ -182,6 +187,7 @@ void loop()
       max_idx = i;
     }
   }
+  MicroPrintf("max_result: %f, max_idx: %d", max_result, max_idx);
   if (max_result > 0.8f)
   {
     is_new_command = true;

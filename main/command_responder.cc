@@ -17,10 +17,17 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_log.h"
 #include "lvgl.h"
 #include <cstdio>
+#include <cstring>
 #include "bsp/esp32_s3_eye.h"
+#include "esp_timer.h"
 
 // Ensure you have the display initialized somewhere in your setup
 extern "C" void setup_display();
+
+// Debounce mechanism to prevent excessive display updates
+static int64_t last_display_update = 0;
+static const int64_t MIN_DISPLAY_UPDATE_INTERVAL_US = 500000; // 500ms minimum between updates
+static char last_command[32] = "";
 
 // TODO 1: Create styles for different background colors ---------------------
 
@@ -40,9 +47,39 @@ void RespondToCommand(int32_t current_time, const char *found_command,
     {
         MicroPrintf("Heard %s (%.4f) @%dms", found_command, score, current_time);
 
+        // Check if we should update display (debounce)
+        int64_t now = esp_timer_get_time();
+        bool should_update_display = false;
+        
+        // Update display if:
+        // 1. Enough time has passed since last update, OR
+        // 2. Command has changed
+        if ((now - last_display_update) > MIN_DISPLAY_UPDATE_INTERVAL_US ||
+            strcmp(last_command, found_command) != 0)
+        {
+            should_update_display = true;
+            last_display_update = now;
+            strncpy(last_command, found_command, sizeof(last_command) - 1);
+            last_command[sizeof(last_command) - 1] = '\0';
+        }
+
+        if (!should_update_display)
+        {
+            // Skip display update to prevent freeze
+            return;
+        }
+
         // Display the recognized command on the LCD
         static lv_obj_t *label = nullptr;
         static lv_obj_t *screen = nullptr;
+        
+        // Try to acquire display lock with timeout to prevent indefinite blocking
+        if (!bsp_display_lock(100)) // 100ms timeout
+        {
+            // Could not acquire lock, skip this update
+            return;
+        }
+        
         if (label == nullptr)
         {
             screen = lv_scr_act();
@@ -65,21 +102,13 @@ void RespondToCommand(int32_t current_time, const char *found_command,
             lv_style_set_text_align(&style, LV_TEXT_ALIGN_CENTER);
             lv_obj_add_style(label, &style, 0);
         }
-        else
-        {
-            lv_label_set_text(label, ""); // Clear previous text
-        }
-
-        // Convert the score to a string
-        char score_str[32];
-        snprintf(score_str, sizeof(score_str), "%.2f", score);
 
         // TODO 4 : Create the final string to display -------------------------
         char display_str[128];
         snprintf(display_str, sizeof(display_str), "Detected something");
         // END TODO 4 ----------------------------------------------------------
 
-        // Set the text of the label
+        // Set the text of the label (only if different to minimize updates)
         lv_label_set_text(label, display_str);
         lv_obj_align(label, LV_ALIGN_CENTER, 0, 0); // Center the label
 
@@ -91,7 +120,7 @@ void RespondToCommand(int32_t current_time, const char *found_command,
 
         // END TODO 6 -----------------------------------------------------------
 
-        // Force display update
-        lv_refr_now(NULL);
+        // Unlock display - LVGL will refresh automatically
+        bsp_display_unlock();
     }
 }
